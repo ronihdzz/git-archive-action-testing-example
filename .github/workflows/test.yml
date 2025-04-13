@@ -1,0 +1,64 @@
+name: Run Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:13
+        env:
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: test_db
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+
+      mongodb:
+        image: mongo:4.4
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd="mongo --eval 'db.runCommand({ ping: 1 })'"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+
+      redis:
+        image: redis:6
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd="redis-cli ping"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+
+    steps:
+      - name: 🧾 Checkout code
+        uses: actions/checkout@v3
+
+      - name: 🏗️ Build test image
+        run: |
+          docker build --progress=plain -t my-test-image -f docker_images/testing/Dockerfile.testing .
+
+      - name: 🚀 Run tests in container
+        run: |
+          docker run \
+            --network=host \
+            -e CI=true \
+            -e GITHUB_DATABASE_POSTGRESQL=postgres://test:test@localhost:5432/test_db \
+            -e GITHUB_DATABASE_MONGODB=mongodb://localhost:27017 \
+            -e GITHUB_DATABASE_REDIS=redis://localhost:6379 \
+            my-test-image \
+            python -m pytest src/tests -v
