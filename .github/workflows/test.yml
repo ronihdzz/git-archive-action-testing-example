@@ -6,6 +6,7 @@ on:
 
 permissions:
   contents: write
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -56,6 +57,7 @@ jobs:
       - name: 🚀 Run tests in container
         run: |
           docker run \
+            --name my-tests \
             --network=host \
             -e CI=true \
             -e GITHUB_DATABASE_POSTGRESQL=postgres://test:test@localhost:5432/test_db \
@@ -64,17 +66,18 @@ jobs:
             -v ${{ github.workspace }}/artifacts:/app/artifacts \
             my-test-image
 
-      #- name: 📦 Upload coverage XML
-      #  uses: actions/upload-artifact@v4
-      #  with:
-      #    name: coverage-xml
-      #    path: artifacts/coverage.xml
+      - name: 📥 Copiar reportes del contenedor (solo si existen)
+        run: |
+          mkdir -p coverage-reports/htmlcov
+          docker cp my-tests:/app/coverage.xml coverage-reports/ || echo "⚠️ coverage.xml not found"
+          docker cp my-tests:/app/htmlcov/. coverage-reports/htmlcov/ || echo "⚠️ htmlcov directory not found"
 
-      #- name: 📦 Upload HTML coverage report
-      #  uses: actions/upload-artifact@v4
-      #  with:
-      #    name: coverage-html
-      #    path: artifacts/htmlcov
+          # Verificamos si de verdad hay coverage:
+          if [ -f coverage-reports/coverage.xml ] || [ -d coverage-reports/htmlcov ]; then
+            echo "✅ Se copiaron reportes de cobertura correctamente."
+          else
+            echo "⚠️ No se encontró coverage.xml ni htmlcov."
+          fi
 
       - name: Guardar coverage
         uses: ./.github/actions/save-coverage

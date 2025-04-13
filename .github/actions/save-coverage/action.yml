@@ -1,24 +1,65 @@
-name: 'Save Coverage Artifacts'
-description: 'Guarda los reportes de cobertura en la rama de artefactos'
+name: "Save Coverage Artifacts"
+description: "Guarda los reportes de cobertura en la rama de artefactos"
+
 inputs:
   gh-token:
-    description: 'GitHub Token'
+    description: "GitHub Token para poder pushear a la rama de artefactos"
     required: true
   artifacts-branch:
-    description: 'Nombre de la rama para guardar artefactos'
+    description: "Nombre de la rama donde se subirán los artefactos (reportes de cobertura, etc.)"
     required: false
-    default: 'artifacts'
+    default: "artifacts"
   reports-path:
-    description: 'Ruta relativa en el repositorio donde se encuentran los reportes de cobertura'
+    description: "Ruta relativa (en el workspace principal) donde se encuentran los reportes de cobertura"
     required: false
-    default: 'deployments/tests/reports'
-runs:
-  using: 'composite'
-  steps:
-    - name: Checkout code (if needed for context)
-      uses: actions/checkout@v3
+    default: "coverage-reports"
 
-    - name: Save artifacts to branch
+runs:
+  using: "composite"
+  steps:
+    # ----------------------------------------------------------------------------------------
+    # Paso 1: Hacer checkout directamente dentro de la acción, en la carpeta "action-repo"
+    # ----------------------------------------------------------------------------------------
+    - name: "Checkout code"
+      uses: actions/checkout@v3
+      with:
+        path: "action-repo"
+
+    # ----------------------------------------------------------------------------------------
+    # Paso 2: Verificar si la carpeta de cobertura existe y no está vacía en el workspace.
+    #         Asegurarnos de que se generaron los reportes antes de proceder.
+    # ----------------------------------------------------------------------------------------
+    - name: "Verificar carpeta de cobertura"
+      shell: bash
+      env:
+        WORKSPACE_PATH: ${{ github.workspace }}
+        REPORTS_PATH: ${{ inputs.reports-path }}
+      run: |
+        set -e
+        echo "▶️ Iniciando verificación de la carpeta de coverage..."
+        
+        # Nos aseguramos de regresar al workspace principal donde están los reportes
+        cd "${WORKSPACE_PATH}"
+
+        echo "🔍 Revisando la carpeta '${REPORTS_PATH}' dentro de '${WORKSPACE_PATH}'"
+        if [ ! -d "${REPORTS_PATH}" ]; then
+          echo "❌ Error: La carpeta '${WORKSPACE_PATH}/${REPORTS_PATH}' no existe."
+          exit 1
+        fi
+
+        # Verificar si está vacía o no
+        FILE_COUNT=$(find "${REPORTS_PATH}" | wc -l)
+        if [ "${FILE_COUNT}" -le 1 ]; then
+          echo "❌ Error: La carpeta '${WORKSPACE_PATH}/${REPORTS_PATH}' está vacía."
+          exit 1
+        fi
+        
+        echo "✅ La carpeta '${REPORTS_PATH}' existe y contiene archivos. Continuando..."
+
+    # ----------------------------------------------------------------------------------------
+    # Paso 3: Clonar (o crear) la rama de artefactos, en la carpeta "artifacts-repo".
+    # ----------------------------------------------------------------------------------------
+    - name: "Clonar o crear la rama de artefactos"
       shell: bash
       env:
         GH_TOKEN: ${{ inputs.gh-token }}
@@ -26,47 +67,90 @@ runs:
         BRANCH_NAME: ${{ github.ref_name }}
         REPO_NAME: ${{ github.repository }}
         ARTIFACTS_BRANCH: ${{ inputs.artifacts-branch }}
-        REPORTS_PATH: ${{ inputs.reports-path }}
+        WORKSPACE_PATH: ${{ github.workspace }}
       run: |
-        echo "Configurando git user"
+        set -e
+        echo "▶️ Iniciando clonación o creación de la rama '${ARTIFACTS_BRANCH}'"
+
+        # Configurar usuario de Git para que no falle el commit
         git config --global user.email "github-actions[bot]@users.noreply.github.com"
         git config --global user.name "github-actions[bot]"
+        git config --global init.defaultBranch "${ARTIFACTS_BRANCH}"
 
-        echo "Verificando si existe la rama ${ARTIFACTS_BRANCH}"
-        BRANCH_EXISTS=$(git ls-remote --heads https://${GH_TOKEN}@github.com/${REPO_NAME}.git ${ARTIFACTS_BRANCH})
-        if [ -n "$BRANCH_EXISTS" ]; then
-          echo "La rama ${ARTIFACTS_BRANCH} existe. Clonándola"
-          git clone --branch ${ARTIFACTS_BRANCH} --single-branch https://${GH_TOKEN}@github.com/${REPO_NAME}.git artifacts-repo
-          cd artifacts-repo
+        echo "🔎 Verificando si la rama '${ARTIFACTS_BRANCH}' ya existe en remoto"
+        BRANCH_EXISTS=$(git ls-remote --heads "https://x-access-token:${GH_TOKEN}@github.com/${REPO_NAME}.git" "${ARTIFACTS_BRANCH}")
+
+        if [ -n "${BRANCH_EXISTS}" ]; then
+          echo "✅ La rama '${ARTIFACTS_BRANCH}' existe. Clonándola en la carpeta 'artifacts-repo'."
+          git clone --branch "${ARTIFACTS_BRANCH}" --single-branch "https://x-access-token:${GH_TOKEN}@github.com/${REPO_NAME}.git" "artifacts-repo"
         else
-          echo "La rama ${ARTIFACTS_BRANCH} no existe. Creando una nueva rama huérfana"
-          mkdir artifacts-repo
-          cd artifacts-repo
+          echo "🆕 La rama '${ARTIFACTS_BRANCH}' NO existe. Creándola como rama huérfana."
+          mkdir -p "artifacts-repo"
+          cd "artifacts-repo"
           git init
-          git checkout --orphan ${ARTIFACTS_BRANCH}
+          git checkout --orphan "${ARTIFACTS_BRANCH}"
           git commit --allow-empty -m "Commit inicial para la rama ${ARTIFACTS_BRANCH}"
-          git remote add origin https://${GH_TOKEN}@github.com/${REPO_NAME}.git
-          git push --set-upstream origin ${ARTIFACTS_BRANCH}
+          git remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${REPO_NAME}.git"
+          git push --set-upstream origin "${ARTIFACTS_BRANCH}"
+          cd ..
         fi
 
-        echo "Creando directorios para los artefactos"
-        mkdir -p ${BRANCH_NAME}/${COMMIT_ID}
-        cp ../${REPORTS_PATH}/* ${BRANCH_NAME}/${COMMIT_ID}/
-        mkdir -p ${BRANCH_NAME}/latest
-        cp ../${REPORTS_PATH}/* ${BRANCH_NAME}/latest/
+        echo "📁 Directorio final: $(pwd). Si existe 'artifacts-repo', se clonó o se inicializó."
 
-        echo "Agregando README al repositorio de artefactos"
-        README_CONTENT="# Repositorio de Artefactos\n\nContiene reportes de test y otros artefactos del proyecto."
-        echo -e $README_CONTENT > README.md
+    # ----------------------------------------------------------------------------------------
+    # Paso 4: Copiar archivos de coverage desde el workspace a la carpeta clonada "artifacts-repo".
+    # ----------------------------------------------------------------------------------------
+    - name: "Copiar cobertura y hacer commit"
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.gh-token }}
+        COMMIT_ID: ${{ github.sha }}
+        BRANCH_NAME: ${{ github.ref_name }}
+        REPO_NAME: ${{ github.repository }}
+        ARTIFACTS_BRANCH: ${{ inputs.artifacts-branch }}
+        WORKSPACE_PATH: ${{ github.workspace }}
+        REPORTS_PATH: ${{ inputs.reports-path }}
+      run: |
+        set -e
 
-        echo "Agregando artefactos y README a git"
-        git add README.md
-        git add ${BRANCH_NAME}/${COMMIT_ID}/*
-        git add ${BRANCH_NAME}/latest/*
+        # Ubicarnos en la carpeta clonada, si existe (caso de rama ya existente)
+        if [ -d "artifacts-repo" ]; then
+          cd "artifacts-repo"
+        else
+          # Si no existe, significa que la acabamos de crear y ya estamos en ".."
+          echo "⚠️ No se encontró 'artifacts-repo'. Revisar si hubo error previo en el paso de clonación."
+          exit 1
+        fi
 
-        git commit -m "Agregar artefactos y README para commit $COMMIT_ID en la rama $BRANCH_NAME"
-        
-        echo "Pushing artefactos a la rama ${ARTIFACTS_BRANCH}"
-        git push origin ${ARTIFACTS_BRANCH}
-        
-        echo "Artefactos subidos exitosamente a la rama ${ARTIFACTS_BRANCH}"
+        echo "▶️ Creando directorios dentro de 'artifacts-repo' para guardar la cobertura."
+        mkdir -p "${BRANCH_NAME}/${COMMIT_ID}"
+        mkdir -p "${BRANCH_NAME}/latest"
+
+        echo "🔀 Regresando a '${WORKSPACE_PATH}' para copiar la cobertura."
+        cd "${WORKSPACE_PATH}"
+
+        echo "📂 Copiando contenido de '${REPORTS_PATH}' a 'artifacts-repo/${BRANCH_NAME}/${COMMIT_ID}'"
+        cp -r "${REPORTS_PATH}/." "${WORKSPACE_PATH}/artifacts-repo/${BRANCH_NAME}/${COMMIT_ID}/"
+        cp -r "${REPORTS_PATH}/." "${WORKSPACE_PATH}/artifacts-repo/${BRANCH_NAME}/latest/"
+
+        echo "✅ Cobertura copiada. Preparando commit..."
+
+        # Volvemos a la carpeta clonada para comitear los cambios
+        cd "${WORKSPACE_PATH}/artifacts-repo"
+
+        echo "📝 Creando (o editando) README.md"
+        echo "# Repositorio de Artefactos" > README.md
+        echo "" >> README.md
+        echo "Contiene reportes de test y otros artefactos del proyecto." >> README.md
+
+        echo "📦 Agregando todos los cambios al staging."
+        git add .
+
+        COMMIT_MESSAGE="Agregar artefactos y README para commit ${COMMIT_ID} en la rama ${BRANCH_NAME}"
+        echo "📦 Haciendo commit con mensaje: '${COMMIT_MESSAGE}'"
+        git commit -m "${COMMIT_MESSAGE}" || echo "⚠️ No hay cambios nuevos que comitear."
+
+        echo "🚀 Haciendo push a la rama '${ARTIFACTS_BRANCH}'"
+        git push origin "${ARTIFACTS_BRANCH}"
+
+        echo "✅ Artefactos subidos exitosamente a la rama '${ARTIFACTS_BRANCH}'."
