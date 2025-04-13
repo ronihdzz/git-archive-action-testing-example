@@ -66,18 +66,13 @@ jobs:
             -v ${{ github.workspace }}/artifacts:/app/artifacts \
             my-test-image
 
-      - name: 📥 Copiar reportes del contenedor (solo si existen)
+      - name: 📥 Copiar reportes desde el contenedor
         run: |
-          mkdir -p coverage-reports/htmlcov
-          docker cp my-tests:/app/coverage.xml coverage-reports/ || echo "⚠️ coverage.xml not found"
-          docker cp my-tests:/app/htmlcov/. coverage-reports/htmlcov/ || echo "⚠️ htmlcov directory not found"
+          mkdir -p coverage-reports
+          docker cp my-tests:/app/coverage-reports/. coverage-reports/
 
-          # Verificamos si de verdad hay coverage:
-          if [ -f coverage-reports/coverage.xml ] || [ -d coverage-reports/htmlcov ]; then
-            echo "✅ Se copiaron reportes de cobertura correctamente."
-          else
-            echo "⚠️ No se encontró coverage.xml ni htmlcov."
-          fi
+          echo "📄 Archivos copiados desde el contenedor:"
+          ls -lh coverage-reports
 
       - name: Guardar coverage
         uses: ./.github/actions/save-coverage
