@@ -15,13 +15,11 @@ fi
 echo "🧪 Running tests with coverage..."
 poetry run "$@"
 
-# 📂 Crear directorio de artifacts si no existe
-mkdir -p /app/artifacts/htmlcov
-
-# 📤 Mover archivos de cobertura
-echo "📤 Moving coverage.xml and htmlcov/ to /app/artifacts/"
-[ -f coverage.xml ] && mv coverage.xml /app/artifacts/ || echo "⚠️ coverage.xml not found."
-[ -d htmlcov ] && mv htmlcov/* /app/artifacts/htmlcov/ || echo "⚠️ htmlcov directory not found."
+# 📤 Copiar archivos de cobertura a una carpeta controlada por el runner
+echo "📤 Copying coverage reports to /app/coverage-reports/"
+mkdir -p /app/coverage-reports/htmlcov
+[ -f coverage.xml ] && cp coverage.xml /app/coverage-reports/ || echo "⚠️ coverage.xml not found."
+[ -d htmlcov ] && cp -r htmlcov/* /app/coverage-reports/htmlcov/ || echo "⚠️ htmlcov directory not found."
 
 # 📊 Mostrar resumen de cobertura (opcional)
 if command -v poetry > /dev/null; then
