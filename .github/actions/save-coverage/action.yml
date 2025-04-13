@@ -27,7 +27,7 @@ runs:
 
     # ----------------------------------------------------------------------------------------
     # Paso 2: Verificar si la carpeta de cobertura existe y no está vacía en el workspace.
-    #         Asegurarnos de que se generaron los reportes antes de proceder.
+    #         Mostrar el listado de archivos que contiene.
     # ----------------------------------------------------------------------------------------
     - name: "Verificar carpeta de cobertura"
       shell: bash
@@ -54,7 +54,9 @@ runs:
           exit 1
         fi
         
-        echo "✅ La carpeta '${REPORTS_PATH}' existe y contiene archivos. Continuando..."
+        echo "✅ La carpeta '${REPORTS_PATH}' existe y contiene archivos. Listando contenido..."
+        ls -lahR "${REPORTS_PATH}"
+        echo "✅ Fin del listado de archivos."
 
     # ----------------------------------------------------------------------------------------
     # Paso 3: Clonar (o crear) la rama de artefactos, en la carpeta "artifacts-repo".
@@ -117,7 +119,6 @@ runs:
         if [ -d "artifacts-repo" ]; then
           cd "artifacts-repo"
         else
-          # Si no existe, significa que la acabamos de crear y ya estamos en ".."
           echo "⚠️ No se encontró 'artifacts-repo'. Revisar si hubo error previo en el paso de clonación."
           exit 1
         fi
