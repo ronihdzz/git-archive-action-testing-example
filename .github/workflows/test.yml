@@ -60,5 +60,17 @@ jobs:
             -e GITHUB_DATABASE_POSTGRESQL=postgres://test:test@localhost:5432/test_db \
             -e GITHUB_DATABASE_MONGODB=mongodb://localhost:27017 \
             -e GITHUB_DATABASE_REDIS=redis://localhost:6379 \
-            my-test-image \
-            python -m pytest src/tests -v
+            -v ${{ github.workspace }}/artifacts:/app/artifacts \
+            my-test-image
+
+      - name: 📦 Upload coverage XML
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-xml
+          path: artifacts/coverage.xml
+
+      - name: 📦 Upload HTML coverage report
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-html
+          path: artifacts/htmlcov

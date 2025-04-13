@@ -41,4 +41,4 @@ ENV PYTHONPATH=/app
 ENTRYPOINT ["./entrypoint.sh"]
 
 # Comando por defecto: correr los tests
-CMD ["pytest", "src/tests", "-v"]
+CMD ["pytest", "--cov=src", "--cov-report=xml", "--cov-report=html", "src/tests", "-v"]
