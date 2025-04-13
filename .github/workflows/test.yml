@@ -11,6 +11,9 @@ jobs:
   test:
     runs-on: ubuntu-latest
 
+    env:
+      COVERAGE_REPORTS: coverage-reports
+
     services:
       postgres:
         image: postgres:13
@@ -68,15 +71,25 @@ jobs:
 
       - name: 📥 Copiar reportes desde el contenedor
         run: |
-          mkdir -p coverage-reports
-          docker cp my-tests:/app/coverage-reports/. coverage-reports/
+          mkdir -p ${{ env.COVERAGE_REPORTS }}
+          docker cp my-tests:/app/coverage-reports/. ${{ env.COVERAGE_REPORTS }}
 
           echo "📄 Archivos copiados desde el contenedor:"
-          ls -lh coverage-reports
+          ls -lh ${{ env.COVERAGE_REPORTS }}
+
+      - name: 📦 Comprimir cobertura como ZIP
+        run: |
+          zip -r "${{ env.COVERAGE_REPORTS }}.zip" "${{ env.COVERAGE_REPORTS }}"
+
+      - name: 📤 Subir cobertura como artefacto
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.COVERAGE_REPORTS }}.zip
+          path: ${{ env.COVERAGE_REPORTS }}.zip
 
       - name: Guardar coverage
         uses: ./.github/actions/save-coverage
         with:
           gh-token: ${{ secrets.GITHUB_TOKEN }}
           artifacts-branch: 'artifacts'
-          reports-path: 'coverage-reports'
+          reports-path: ${{ env.COVERAGE_REPORTS }}
