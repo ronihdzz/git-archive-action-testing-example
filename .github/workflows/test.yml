@@ -89,4 +89,4 @@ jobs:
           gh-token: ${{ secrets.GITHUB_TOKEN }}
           artifacts-branch: 'artifacts'
           coverage-source: ${{ env.COVERAGE_REPORTS }}
-          is-artifact: true
+          is-artifact: false
